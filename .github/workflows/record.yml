@@ -1,0 +1,54 @@
+name: record
+
+# Each run records ~5h50m and starts its successor at 5h40m (10 min overlap).
+# The schedule only restarts the chain if no recorder is running.
+on:
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: "record this long"
+        default: "21000"
+      handoff:
+        description: "start the successor after this many seconds (0 = none)"
+        default: "20400"
+      next:
+        description: "successor's seconds,handoff"
+        default: "21000,20400"
+  schedule:
+    - cron: "*/30 * * * *"
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    timeout-minutes: 358
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Skip if a recorder is already running
+        id: gate
+        run: |
+          n=$(gh run list --workflow record.yml --status in_progress --json databaseId --jq "[.[] | select(.databaseId != ${{ github.run_id }})] | length")
+          if [ "${{ github.event_name }}" = "schedule" ] && [ "$n" -gt 0 ]; then echo "skip=1" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/setup-python@v5
+        if: steps.gate.outputs.skip != '1'
+        with:
+          python-version: "3.12"
+      - name: Record
+        if: steps.gate.outputs.skip != '1'
+        run: |
+          pip install -q requests
+          python -u record.py "${{ inputs.seconds || '21000' }}" "${{ inputs.handoff || '20400' }}" "${{ inputs.next || '21000,20400' }}"
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.gate.outputs.skip != '1'
+        with:
+          name: rec-${{ github.run_id }}
+          path: rec/
+          retention-days: 30
+          compression-level: 0

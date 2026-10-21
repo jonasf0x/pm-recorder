@@ -1,2 +1,11 @@
 # pm-recorder
-Polymarket public market data recorder (GitHub Actions)
+
+Records Polymarket public market data on GitHub Actions, continuously: every hour a snapshot of
+the markets ending within 45 days, the order books of a broad set of them and the taker trades
+between snapshots; every minute the books and trades of the markets with the largest
+liquidity-reward pools. Each run records ~6 hours, stores hourly gzipped JSON bundles, and starts
+the next run before it ends.
+
+Read-only public endpoints (Gamma, CLOB books, Data API v2); no trading.
+
+The source of truth is a private repository; this copy is synced from it.
