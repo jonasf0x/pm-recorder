@@ -214,8 +214,8 @@ def trades(cids, since, until=None):
     return out, ok
 
 
-def compact_book(b, lo=None, hi=None, n=15):
-    """Best bid/ask, size there, size within 5c, and the first n ask levels (deep asks need them)."""
+def compact_book(b, n=30):
+    """Best bid/ask, size there, size within 5c, and the first n ask levels (deep asks need the size resting at 2x the ask)."""
     if not b:
         return None
     bids, asks = b["bids"], b["asks"]
