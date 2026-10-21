@@ -356,6 +356,9 @@ def handoff(nxt):
 
 def main():
     seconds, hand, nxt = int(sys.argv[1]), int(sys.argv[2]), sys.argv[3]
+    if not (SB_URL and SB_KEY):                                  # the trade windows chain through storage
+        print("SUPABASE_URL / SUPABASE_SECRET_KEY secrets not set: nothing recorded")
+        return
     start = time.time()
     stop = threading.Event()
     # reward set before the first snapshot: one scan now
