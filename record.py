@@ -58,7 +58,7 @@ def get(url, params=None, tries=5):
     for k in range(tries):
         try:
             r = S.get(url, params=params, timeout=60)
-            if r.status_code == 429 or r.status_code >= 500:
+            if r.status_code in (404, 429) or r.status_code >= 500:   # Gamma's keyset 404s now and then
                 raise requests.RequestException(f"HTTP {r.status_code}")
             r.raise_for_status()
             return r.json()
@@ -378,11 +378,12 @@ def main():
         now = utc()
         slot = now.replace(minute=SLOT_MIN, second=0, microsecond=0)
         if slot <= now < slot + timedelta(minutes=20) and not handed and done != slot:
-            done = slot
             try:
                 snapshot(slot)
-            except Exception as e:
+                done = slot
+            except Exception as e:                            # retried until the slot's 20 minutes are up
                 print(f"snapshot {iso(slot)} failed: {e}", file=sys.stderr, flush=True)
+                time.sleep(40)
         time.sleep(20)
     stop.set()
     th.join(timeout=90)
