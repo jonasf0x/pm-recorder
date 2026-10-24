@@ -1,6 +1,7 @@
 name: record
 
-# Each run records ~5h50m and starts its successor at 5h40m (10 min overlap).
+# Each run records 5h50m and starts its successor at 4h45m (65 min overlap: GitHub can be slow to start a
+# run). During the overlap only the older run takes the hourly snapshots (record.py, older_running).
 # The schedule only restarts the chain if no recorder is running.
 on:
   workflow_dispatch:
@@ -10,10 +11,10 @@ on:
         default: "21000"
       handoff:
         description: "start the successor after this many seconds (0 = none)"
-        default: "20400"
+        default: "17100"
       next:
         description: "successor's seconds,handoff"
-        default: "21000,20400"
+        default: "21000,17100"
   schedule:
     - cron: "*/30 * * * *"
 
@@ -44,7 +45,7 @@ jobs:
         if: steps.gate.outputs.skip != '1'
         run: |
           pip install -q requests
-          python -u record.py "${{ inputs.seconds || '21000' }}" "${{ inputs.handoff || '20400' }}" "${{ inputs.next || '21000,20400' }}"
+          python -u record.py "${{ inputs.seconds || '21000' }}" "${{ inputs.handoff || '17100' }}" "${{ inputs.next || '21000,17100' }}"
       - uses: actions/upload-artifact@v4
         if: always() && steps.gate.outputs.skip != '1'
         with:

@@ -9,10 +9,14 @@ Every minute: the books and trades of the 60 markets with the biggest liquidity-
 (mid 10-90c, ending >= 2 days out).
 
 Each hour's bundle (gzip JSON) goes to Supabase Storage (bucket pm-recorder, last 72 hours) and to
-the run's artifact. Runs chain like hl-recorder: each records `seconds`, starts its successor
-after `handoff` seconds, and stops taking hourly snapshots then.
+the run's artifact. Runs chain like hl-recorder: each records `seconds` and starts its successor after
+`handoff` seconds — an hour of overlap, because GitHub can take that long to start a run. Both record
+minutes during the overlap; only the older one takes the hourly snapshots (the newer waits until the older
+has finished, then its first bundle also carries the overlap's minutes; readers skip minutes they already
+have). Until 2026-10-24 the old run stopped snapshotting at the handoff and the gap until the successor
+started (15-58 min, every ~6h) lost its minutes.
 
-  python record.py 21000 20400 21000,20400
+  python record.py 21000 17100 21000,17100
 """
 import gzip
 import json
@@ -35,6 +39,8 @@ BUCKET, KEEP_H = "pm-recorder", 72
 OUT = Path("rec")
 SLOT_MIN = 30                 # hourly snapshot at :30
 N_REWARD = 60                 # markets recorded every minute
+RUN_S, HANDOFF_S = 21000, 17100   # 5h50 a run (job timeout 5h58), successor started at 4h45
+OLD_TIMES = (21000, 20400)        # what runs started before 2026-10-24 pass on: read as the new times
 RECURRING = re.compile(r"up or down|dip to|reach \$|price of .* (?:be|above|between)|highest temperature|"
                        r"# of tweets|tweets .* (?:from|between)|truth social posts", re.I)
 SPORTS = {"sports", "games", "esports"}
@@ -351,11 +357,36 @@ def minute_loop(stop):
 
 def handoff(nxt):
     s, h = nxt.split(",")
+    if (int(s), int(h)) == OLD_TIMES:
+        s, h, nxt = RUN_S, HANDOFF_S, f"{RUN_S},{HANDOFF_S}"
     os.system(f'gh workflow run record.yml -f seconds={s} -f handoff={h} -f next={nxt}')
+
+
+_older = {"t": 0.0, "v": False}
+
+
+def older_running():
+    """Is an older recorder run still in progress (and young enough to be alive)? Checked every 5 minutes;
+    on any error, False (snapshot rather than risk a gap)."""
+    if time.time() - _older["t"] < 300:
+        return _older["v"]
+    me, v = int(os.getenv("GITHUB_RUN_ID", "0") or 0), False
+    try:
+        out = os.popen("gh run list --workflow record.yml --status in_progress --json databaseId,startedAt").read()
+        for r in json.loads(out or "[]"):
+            age = (utc() - datetime.fromisoformat(r["startedAt"].replace("Z", "+00:00"))).total_seconds()
+            if me and r["databaseId"] < me and age < RUN_S + 600:
+                v = True
+    except Exception as e:
+        print("older-run check failed:", e, file=sys.stderr, flush=True)
+    _older.update(t=time.time(), v=v)
+    return v
 
 
 def main():
     seconds, hand, nxt = int(sys.argv[1]), int(sys.argv[2]), sys.argv[3]
+    if (seconds, hand) == OLD_TIMES:                             # started by a run from before the change
+        seconds, hand, nxt = RUN_S, HANDOFF_S, f"{RUN_S},{HANDOFF_S}"
     if not (SB_URL and SB_KEY):                                  # the trade windows chain through storage
         print("SUPABASE_URL / SUPABASE_SECRET_KEY secrets not set: nothing recorded")
         return
@@ -377,7 +408,7 @@ def main():
             handed = True
         now = utc()
         slot = now.replace(minute=SLOT_MIN, second=0, microsecond=0)
-        if slot <= now < slot + timedelta(minutes=20) and not handed and done != slot:
+        if slot <= now < slot + timedelta(minutes=20) and done != slot and not older_running():
             try:
                 snapshot(slot)
                 done = slot
