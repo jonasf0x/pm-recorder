@@ -1,0 +1,53 @@
+name: wide
+
+# The wide recorder (wide.py): reward pools ranked below record.py's 60, a sample every 5 minutes, hourly
+# bundles as the run's artifact only (no Supabase). Chained like record.yml: each run records 5h50m and starts
+# its successor at 4h45m; the overlap's samples are duplicates that readers drop.
+on:
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: "record this long"
+        default: "21000"
+      handoff:
+        description: "start the successor after this many seconds (0 = none)"
+        default: "17100"
+      next:
+        description: "successor's seconds,handoff"
+        default: "21000,17100"
+  schedule:
+    - cron: "7,37 * * * *"
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  wide:
+    runs-on: ubuntu-latest
+    timeout-minutes: 358
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Skip if a wide recorder is already running
+        id: gate
+        run: |
+          n=$(gh run list --workflow wide.yml --status in_progress --json databaseId --jq "[.[] | select(.databaseId != ${{ github.run_id }})] | length")
+          if [ "${{ github.event_name }}" = "schedule" ] && [ "$n" -gt 0 ]; then echo "skip=1" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/setup-python@v5
+        if: steps.gate.outputs.skip != '1'
+        with:
+          python-version: "3.12"
+      - name: Record
+        if: steps.gate.outputs.skip != '1'
+        run: |
+          pip install -q requests
+          python -u wide.py "${{ inputs.seconds || '21000' }}" "${{ inputs.handoff || '17100' }}" "${{ inputs.next || '21000,17100' }}"
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.gate.outputs.skip != '1'
+        with:
+          name: wide-${{ github.run_id }}
+          path: rec/wide_*.json.gz
+          retention-days: 14
+          compression-level: 0

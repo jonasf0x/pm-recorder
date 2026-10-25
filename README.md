@@ -9,3 +9,6 @@ the next run before it ends.
 Read-only public endpoints (Gamma, CLOB books, Data API v2); no trading.
 
 The source of truth is a private repository; this copy is synced from it.
+
+`wide.py` (workflow `wide`) is a second, lighter recorder: the reward pools ranked below the 60 above, a
+sample every 5 minutes, hourly bundles as the run's artifact only.
